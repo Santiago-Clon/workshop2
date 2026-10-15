@@ -1,0 +1,85 @@
+{
+  "stage": "PREPARED_VALIDATION",
+  "started_at_utc": "2026-10-14T12:12:02.265842+00:00",
+  "execution_status": "SUCCESS",
+  "global_success": true,
+  "tables": {
+    "spotify_tracks": 113550,
+    "grammy_nominations": 4810
+  },
+  "rules": [
+    {
+      "rule_id": "PV-01",
+      "description": "Required PREPARED tables and columns exist.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "errors": []
+      }
+    },
+    {
+      "rule_id": "PV-02",
+      "description": "Both PREPARED tables contain records.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "spotify_tracks": 113550,
+        "grammy_nominations": 4810
+      }
+    },
+    {
+      "rule_id": "PV-03",
+      "description": "No duplicate Spotify track_id + track_genre keys.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "duplicate_key_groups": 0
+      }
+    },
+    {
+      "rule_id": "PV-04",
+      "description": "Spotify tempo zero values are normalized to NULL.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "tempo_nulls": 157,
+        "tempo_zero_remaining": 0
+      }
+    },
+    {
+      "rule_id": "PV-05",
+      "description": "Selected Spotify attributes fall within [0, 1].",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "invalid_danceability": 0,
+        "invalid_energy": 0,
+        "invalid_instrumentalness": 0,
+        "invalid_valence": 0
+      }
+    },
+    {
+      "rule_id": "PV-06",
+      "description": "Missing Grammy nominees are preserved and correctly flagged.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "null_nominees": 6,
+        "flagged_missing": 6,
+        "unflagged_missing": 0,
+        "incorrectly_flagged": 0
+      }
+    },
+    {
+      "rule_id": "PV-07",
+      "description": "Grammy updated_at is not earlier than published_at.",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "details": {
+        "invalid_date_order": 0
+      }
+    }
+  ],
+  "exceptions": [],
+  "finished_at_utc": "2026-10-14T12:12:02.813744+00:00"
+}

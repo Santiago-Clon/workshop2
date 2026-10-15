@@ -1,0 +1,52 @@
+{
+  "stage": "TRANSFORM_INTEGRATE",
+  "started_at_utc": "2026-10-14T12:09:08.881154+00:00",
+  "execution_status": "SUCCESS",
+  "global_success": true,
+  "sources": {
+    "spotify": {
+      "input_rows": 114000,
+      "output_rows": 113550,
+      "duplicate_key_groups": 444,
+      "duplicate_extra_rows_removed": 450,
+      "distinct_track_ids": 89741,
+      "distinct_genres": 114,
+      "grain": "one row per track_id + track_genre"
+    },
+    "grammy": {
+      "input_rows": 4810,
+      "output_rows": 4810,
+      "missing_nominee_rows_preserved": 6,
+      "distinct_years": 62,
+      "distinct_categories": 630,
+      "winner_distinct_values": [
+        true
+      ],
+      "grain": "one nomination per Grammy edition/category/nominee"
+    }
+  },
+  "exceptions": [
+    {
+      "rule_id": "R-SPT-01",
+      "source": "spotify",
+      "description": "Additional observations removed for repeated track_id + track_genre combinations.",
+      "count": 450,
+      "severity": "INFO"
+    },
+    {
+      "rule_id": "R-SPT-04D",
+      "source": "spotify",
+      "description": "Tempo equal to zero is treated as unknown and set to null.",
+      "count": 157,
+      "severity": "WARNING"
+    },
+    {
+      "rule_id": "R-GRM-02",
+      "source": "grammy",
+      "description": "Nominations without nominee; rows preserved with deterministic technical keys.",
+      "count": 6,
+      "severity": "WARNING"
+    }
+  ],
+  "finished_at_utc": "2026-10-14T12:11:03.625180+00:00"
+}

@@ -1,0 +1,49 @@
+{
+  "stage": "ARTIST_INTEGRATION",
+  "started_at_utc": "2026-10-14T12:11:05.729618+00:00",
+  "execution_status": "SUCCESS",
+  "global_success": true,
+  "rules": [
+    {
+      "rule_id": "MAT-01",
+      "description": "Spotify artist associations have nonempty normalized names",
+      "status": "PASS",
+      "details": {}
+    },
+    {
+      "rule_id": "MAT-02",
+      "description": "Grammy candidates have nonempty normalized names",
+      "status": "PASS",
+      "details": {}
+    },
+    {
+      "rule_id": "MAT-03",
+      "description": "Every match uses exact normalized-name equality",
+      "status": "PASS",
+      "details": {
+        "matching_strategy": "exact normalized name",
+        "fuzzy_matching_enabled": false
+      }
+    },
+    {
+      "rule_id": "MAT-04",
+      "description": "Output match keys are unique",
+      "status": "PASS",
+      "details": {}
+    }
+  ],
+  "metrics": {
+    "spotify_prepared_rows": 113550,
+    "grammy_prepared_rows": 4810,
+    "spotify_individual_artist_associations": 157530,
+    "spotify_distinct_artist_names": 29811,
+    "grammy_artist_candidates": 2970,
+    "grammy_distinct_artist_names": 1656,
+    "matched_distinct_artist_names": 524,
+    "unmatched_spotify_artist_names": 29287,
+    "unmatched_grammy_artist_names": 1132,
+    "confirmed_track_nomination_matches": 31925
+  },
+  "exceptions": [],
+  "finished_at_utc": "2026-10-14T12:11:56.636402+00:00"
+}

@@ -1,0 +1,7 @@
+"table_name","row_count"
+"bridge_track_artist",157530
+"bridge_track_grammy",31917
+"dim_artist",30943
+"dim_genre",114
+"dim_grammy_record",4430
+"fact_track",113550

@@ -1,0 +1,62 @@
+{
+  "process": "DW_LOAD",
+  "started_at": "2026-10-14T12:12:01.740141+00:00",
+  "execution_status": "SUCCESS",
+  "rules": {
+    "LD-01": "PASS",
+    "LD-02": "PASS",
+    "LD-03": "PASS",
+    "LD-04": "PASS",
+    "LD-05": "PASS",
+    "LD-06": "PASS"
+  },
+  "exceptions": [],
+  "prepared_validation": {
+    "script": "/opt/airflow/project/src/prepared_validation.py",
+    "return_code": 0,
+    "stdout": "{\n  \"stage\": \"PREPARED_VALIDATION\",\n  \"started_at_utc\": \"2026-10-14T12:12:02.265842+00:00\",\n  \"execution_status\": \"SUCCESS\",\n  \"global_success\": true,\n  \"tables\": {\n    \"spotify_tracks\": 113550,\n    \"grammy_nominations\": 4810\n  },\n  \"rules\": [\n    {\n      \"rule_id\": \"PV-01\",\n      \"description\": \"Required PREPARED tables and columns exist.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"errors\": []\n      }\n    },\n    {\n      \"rule_id\": \"PV-02\",\n      \"description\": \"Both PREPARED tables contain records.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"spotify_tracks\": 113550,\n        \"grammy_nominations\": 4810\n      }\n    },\n    {\n      \"rule_id\": \"PV-03\",\n      \"description\": \"No duplicate Spotify track_id + track_genre keys.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"duplicate_key_groups\": 0\n      }\n    },\n    {\n      \"rule_id\": \"PV-04\",\n      \"description\": \"Spotify tempo zero values are normalized to NULL.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"tempo_nulls\": 157,\n        \"tempo_zero_remaining\": 0\n      }\n    },\n    {\n      \"rule_id\": \"PV-05\",\n      \"description\": \"Selected Spotify attributes fall within [0, 1].\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"invalid_danceability\": 0,\n        \"invalid_energy\": 0,\n        \"invalid_instrumentalness\": 0,\n        \"invalid_valence\": 0\n      }\n    },\n    {\n      \"rule_id\": \"PV-06\",\n      \"description\": \"Missing Grammy nominees are preserved and correctly flagged.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"null_nominees\": 6,\n        \"flagged_missing\": 6,\n        \"unflagged_missing\": 0,\n        \"incorrectly_flagged\": 0\n      }\n    },\n    {\n      \"rule_id\": \"PV-07\",\n      \"description\": \"Grammy updated_at is not earlier than published_at.\",\n      \"status\": \"PASS\",\n      \"severity\": \"CRITICAL\",\n      \"details\": {\n        \"invalid_date_order\": 0\n      }\n    }\n  ],\n  \"exceptions\": [],\n  \"finished_at_utc\": \"2026-10-14T12:12:02.813744+00:00\"\n}\n",
+    "stderr": ""
+  },
+  "prepared_preflight": {
+    "required_tables": [
+      "grammy_artist_candidates",
+      "grammy_nominations",
+      "spotify_track_artists",
+      "spotify_tracks",
+      "track_grammy_matches"
+    ],
+    "existing_tables": [
+      "grammy_artist_candidates",
+      "grammy_nominations",
+      "spotify_track_artists",
+      "spotify_tracks",
+      "track_grammy_matches"
+    ],
+    "missing_tables": [],
+    "row_counts": {
+      "grammy_artist_candidates": 2970,
+      "grammy_nominations": 4810,
+      "spotify_track_artists": 157530,
+      "spotify_tracks": 113550,
+      "track_grammy_matches": 31925
+    },
+    "duplicate_track_genre_keys": 0,
+    "orphan_artist_associations": 0,
+    "orphan_grammy_matches": 0
+  },
+  "dw_metrics": {
+    "row_counts": {
+      "dim_artist": 30943,
+      "dim_genre": 114,
+      "dim_grammy_record": 4430,
+      "fact_track": 113550,
+      "bridge_track_artist": 157530,
+      "bridge_track_grammy": 31917
+    },
+    "duplicate_fact_track_genre_keys": 0,
+    "orphan_track_artist_bridge_rows": 0,
+    "orphan_track_grammy_bridge_rows": 0
+  },
+  "global_success": true,
+  "finished_at": "2026-10-14T12:12:25.456955+00:00"
+}

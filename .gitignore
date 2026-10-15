@@ -1,0 +1,27 @@
+﻿# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Airflow runtime logs and local configuration
+airflow_logs/
+logs/
+config/airflow.cfg
+
+# Database backups and generated data
+backups/
+*.dump
+data/*.csv
+gx/results/*.json
+
+# Operating system
+.DS_Store
+Thumbs.db
+desktop.ini

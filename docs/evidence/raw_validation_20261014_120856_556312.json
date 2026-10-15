@@ -1,0 +1,68 @@
+{
+    "pipeline_stage": "RAW",
+    "execution_timestamp_utc": "2026-10-14T12:08:56.553358+00:00",
+    "global_success": true,
+    "execution_status": "COMPLETED",
+    "summary": {
+        "total_rules": 3,
+        "passed_rules": 3,
+        "failed_rules": 0,
+        "critical_failures": 0,
+        "warning_failures": 0,
+        "info_failures": 0
+    },
+    "rules": [
+        {
+            "rule_id": "GRM-RAW-01",
+            "rule_name": "Grammy schema validation",
+            "source_name": "Grammy",
+            "severity": "Critical",
+            "expectation": "ExpectTableColumnsToMatchOrderedList",
+            "expected_condition": "Las columnas coinciden con el esquema esperado y su orden.",
+            "success": true,
+            "failure_category": null,
+            "metrics": {},
+            "failure_reason": null,
+            "suspected_cause": null,
+            "action": "CONTINUE",
+            "diagnostic_details": null
+        },
+        {
+            "rule_id": "GRM-RAW-02",
+            "rule_name": "Grammy non-empty validation",
+            "source_name": "Grammy",
+            "severity": "Critical",
+            "expectation": "ExpectTableRowCountToBeBetween",
+            "expected_condition": "El dataset contiene al menos una fila.",
+            "success": true,
+            "failure_category": null,
+            "metrics": {
+                "observed_row_count": 4810,
+                "minimum_expected_row_count": 1
+            },
+            "failure_reason": null,
+            "suspected_cause": null,
+            "action": "CONTINUE",
+            "diagnostic_details": null
+        },
+        {
+            "rule_id": "GRM-RAW-03",
+            "rule_name": "Grammy source-to-RAW reconciliation",
+            "source_name": "Grammy",
+            "severity": "Critical",
+            "expectation": "CustomRecordCountReconciliation",
+            "expected_condition": "source_count == raw_count",
+            "success": true,
+            "failure_category": null,
+            "metrics": {
+                "source_count": 4810,
+                "raw_count": 4810,
+                "difference": 0
+            },
+            "failure_reason": null,
+            "suspected_cause": null,
+            "action": "CONTINUE",
+            "diagnostic_details": null
+        }
+    ]
+}

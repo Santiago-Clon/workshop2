@@ -1,297 +1,618 @@
-# ETL Workshop 2: Reliable Music Data Pipeline
 
-A reproducible ETL pipeline that integrates Spotify track metadata and Grammy Awards records into a PostgreSQL dimensional data warehouse, orchestrated with Apache Airflow and validated with Great Expectations. Power BI provides the analytical layer.
+# Spotify and Grammy Awards — ETL Data Warehouse
 
 ## 1. Project Overview
 
-### Problem Statement
+This project implements an end-to-end ETL pipeline to integrate Spotify track metadata and Grammy Awards records into a dimensional data warehouse for analytical purposes.
 
-Music data is distributed across datasets with different structures, identifiers, naming conventions, and levels of detail. The goal of this workshop is to build a reliable data pipeline that prepares, validates, integrates, and loads these sources into a dimensional warehouse for analytical reporting.
+The solution covers the complete data lifecycle, including source profiling, data quality assessment, extraction, transformation, artist integration, dimensional modeling, orchestration with Apache Airflow, and analytical queries consumed by a dashboard.
 
-### Analytical Objective
+The main objective is to provide a structured and reproducible analytical environment for exploring the musical characteristics and popularity of Spotify tracks associated with artists appearing in Grammy records.
 
-Enable analysis of Spotify track popularity and audio characteristics by genre, and explore relationships between tracks and Grammy Awards records. Grammy associations are not necessarily proof that a track or artist won an award.
+### Main Technologies
 
-## 2. Analytical Requirements
+- Python
+- Pandas
+- PostgreSQL
+- SQLAlchemy
+- Apache Airflow
+- Docker Compose
+- Great Expectations and custom data quality validation scripts
+- SQL for analytical queries
+- A dashboard connected to the dimensional data warehouse
 
-- **RQ-01 — Popularity by Genre:** Analyze average track popularity across genres.
-- **RQ-02 — Audio Features by Genre:** Compare audio characteristics, including danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, and tempo, across genres.
-- **RQ-03 — Popularity by Grammy Year and Category:** Analyze average popularity for tracks associated with Grammy records, grouped by year and category.
+## 2. Business Requirements
 
-The Power BI report implements these analytical views using the dimensional warehouse as its analytical data source.
+The project was designed around three analytical requirements.
+
+### RQ-01 — Average Popularity by Genre
+
+Analyze the average Spotify popularity of tracks associated with artists appearing in Grammy records, differentiating results by musical genre.
+
+**Analytical objective:** Identify differences in average track popularity across genres within the integrated dataset.
+
+### RQ-02 — Musical Characteristics by Genre
+
+Analyze the musical characteristics of Spotify tracks associated with artists recognized in Grammy records, identifying differences according to musical genre.
+
+**Analytical objective:** Compare audio attributes such as danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, and tempo.
+
+### RQ-03 — Popularity by Grammy Year and Category
+
+Analyze the current Spotify popularity distribution of tracks associated with artists present in Grammy records, differentiating results by Grammy year and award category.
+
+**Analytical objective:** Explore how current track popularity varies across Grammy records and categories.
+
+**Important interpretation note:** RQ-03 groups current Spotify popularity by Grammy year and category. It does not measure historical Spotify popularity over time because the Spotify dataset does not provide the required business-time history.
 
 ## 3. Data Sources
 
-| Source | Description | Role |
+The project uses two CSV datasets.
+
+### 3.1 Spotify Dataset
+
+**File:** `data/spotify_dataset.csv`
+
+The dataset contains track metadata, artist names, genre classifications, popularity measurements, and audio features.
+
+Relevant attributes include:
+
+- `track_id`
+- `track_name`
+- `artists`
+- `album_name`
+- `track_genre`
+- `popularity`
+- `duration_ms`
+- `danceability`
+- `energy`
+- `loudness`
+- `speechiness`
+- `acousticness`
+- `instrumentalness`
+- `liveness`
+- `valence`
+- `tempo`
+- `explicit`
+
+The original dataset contains 114,000 rows.
+
+### 3.2 Grammy Awards Dataset
+
+**File:** `data/the_grammy_awards.csv`
+
+This dataset contains Grammy-related records, including nominee information, award categories, years, winner indicators, and source metadata.
+
+Relevant attributes include:
+
+- Nominee
+- Category
+- Grammy year
+- Winner
+- `published_at`
+- `updated_at`
+
+The original dataset contains 4,810 rows.
+
+The fields `published_at` and `updated_at` describe source metadata and must not be interpreted as the Grammy ceremony year.
+
+## 4. Initial Data Profiling
+
+Data profiling was performed before implementing the complete pipeline to identify structural inconsistencies, missing values, duplicate records, and potential integration problems.
+
+### 4.1 Spotify Profiling Findings
+
+| Finding | Observation | Decision |
 |---|---|---|
-| `data/spotify_dataset.csv` | Spotify track metadata, genre, popularity, and audio features | Main source for track-level analytics |
-| `data/the_grammy_awards.csv` | Grammy Awards records, including years and categories | Context for Grammy-related analysis |
+| Candidate business key | `track_id + track_genre` | Use as the track-genre grain |
+| Duplicate key groups | 444 | Investigate repeated observations |
+| Rows involved in duplicate groups | 894 | Compare business attributes |
+| Additional rows removed | 450 | Retain one observation per key |
+| Exact full-row duplicates | None detected | Distinguish key duplication from full-row duplication |
+| Distinct genres | 114 | Preserve genre-level analysis |
+| Missing descriptive attributes | Three missing values in `artists`, `album_name`, and `track_name` were identified during profiling | Preserve and handle according to transformation rules |
+| Numeric scale inconsistencies | Several audio attributes used inconsistent scales | Normalize before analytical use |
+| Zero tempo values | 157 after transformation | Convert to NULL as unknown values |
 
-The source files are stored locally in the repository. Their original provenance, licensing, and any preprocessing performed before the workshop should be documented when confirmed.
+The 450 additional rows were removed because they represented repeated `track_id + track_genre` combinations. The evaluated business attributes showed no differences across those duplicate-key groups.
 
-## 4. Repository Structure
+The resulting Spotify prepared table contains **113,550 rows**, with no duplicate `track_id + track_genre` keys.
+
+A track may appear in more than one genre. Therefore, `track_id` alone does not identify a row at the selected analytical grain.
+
+The source field `Column1` was treated as a technical field rather than a business key.
+
+### 4.2 Grammy Profiling Findings
+
+| Finding | Observation | Decision |
+|---|---|---|
+| Original records | 4,810 | Preserve the source records |
+| Missing nominees | 6 | Preserve and flag the records |
+| Category text variations | Identified during profiling | Normalize for integration |
+| Multivalued descriptive fields | Present | Handle according to transformation requirements |
+| Winner values | Only `True` was observed | Do not use this field to distinguish winners from non-winners |
+
+The six records without nominee names were preserved and assigned deterministic technical keys where required by the transformation process.
+
+Their missing nominee values were flagged rather than silently discarded.
+
+The constant `winner` value is a source limitation. It does not provide sufficient variation to distinguish winning and non-winning records in the available dataset.
+
+## 5. Data Quality Risks and Transformation Decisions
+
+The profiling process identified several risks that influenced the ETL design.
+
+### 5.1 Spotify Quality Risks
+
+- **R-SPT-01 — Duplicate track-genre observations:** Repeated `track_id + track_genre` combinations were evaluated, and 450 additional rows were removed.
+- **R-SPT-02 — Missing descriptive attributes:** Missing track, artist, or album descriptions may affect identification and integration.
+- **R-SPT-03 — Inconsistent categorical representation:** Textual boolean values and categorical domains require standardization.
+- **R-SPT-04 — Inconsistent numeric scales:** Audio features and measurements required normalization.
+- **R-SPT-04B — Mixed instrumentalness representation:** Values represented at different scales required consistent treatment.
+- **R-SPT-04C — Audio feature domain:** Selected normalized attributes must fall within the interval `[0, 1]`.
+- **R-SPT-04D — Invalid tempo values:** Tempo equal to zero is treated as unknown and converted to NULL.
+- **R-SPT-05 — Text normalization:** Differences in artist and category text may prevent exact integration.
+- **R-SPT-06 — Technical and business attributes:** `Column1` is not a business identifier, and popularity may vary across genre observations for the same track.
+- **R-SPT-07 — Lack of business-time history:** The source does not provide the historical Spotify popularity snapshots needed for temporal trend analysis.
+
+### 5.2 Grammy Quality Risks
+
+- **R-GRM-01 — Missing descriptive attributes:** Missing values must be evaluated according to their business meaning.
+- **R-GRM-02 — Missing nominees:** Six records are retained and explicitly flagged.
+- **R-GRM-03 — Category text variations:** Normalization is required for consistent category matching.
+- **R-GRM-04 — Multivalued fields:** Some text attributes may represent multiple entities.
+- **R-GRM-05 — Source timestamps:** Publication and update timestamps must not be confused with the Grammy award year.
+- **R-GRM-06 — Constant winner indicator:** The available values do not distinguish winning and non-winning records.
+
+## 6. Data Quality Validation Strategy
+
+The pipeline uses stage-specific validation scripts and rule identifiers to make data quality checks explicit and auditable.
+
+### 6.1 RAW Validation
+
+**Script:** `gx/raw_validation.py`
+
+RAW validation checks source structure, non-empty datasets, and source-to-RAW reconciliation.
+
+| Rule | Description | Severity |
+|---|---|---|
+| SPT-RAW-01 | Spotify schema validation | Critical |
+| SPT-RAW-02 | Spotify non-empty validation | Critical |
+| SPT-RAW-03 | Spotify source-to-RAW reconciliation | Critical |
+| GRM-RAW-01 | Grammy schema validation | Critical |
+| GRM-RAW-02 | Grammy non-empty validation | Critical |
+| GRM-RAW-03 | Grammy source-to-RAW reconciliation | Critical |
+
+A critical validation failure prevents the pipeline from proceeding to the subsequent transformation stage.
+
+The validation output records individual rule statuses, execution status, exceptions, and an overall success indicator.
+
+### 6.2 PREPARED Validation
+
+**Script:** `src/prepared_validation.py`
+
+PREPARED validation verifies that the transformation process produces data that satisfies the defined structural and business constraints.
+
+| Rule | Validation |
+|---|---|
+| PV-01 | Required PREPARED tables and columns exist |
+| PV-02 | Spotify and Grammy prepared tables are non-empty |
+| PV-03 | No duplicate Spotify `track_id + track_genre` keys |
+| PV-04 | Spotify tempo zero values are normalized to NULL |
+| PV-05 | Selected Spotify audio attributes fall within `[0, 1]` |
+| PV-06 | Missing Grammy nominees are preserved and correctly flagged |
+| PV-07 | Grammy `updated_at` is not earlier than `published_at` |
+
+All seven rules passed in the successful execution dated October 16, 2026.
+
+### 6.3 Artist Integration Validation
+
+**Script:** `src/integrate_artists.py`
+
+| Rule | Validation |
+|---|---|
+| MAT-01 | Spotify artist associations have non-empty normalized names |
+| MAT-02 | Grammy candidates have non-empty normalized names |
+| MAT-03 | Every match uses exact normalized-name equality |
+| MAT-04 | Output match keys are unique |
+
+All four rules passed in the reported execution.
+
+The matching strategy uses exact equality after name normalization. Fuzzy matching is disabled to avoid introducing unverified associations.
+
+### 6.4 Data Warehouse Load Validation
+
+**Script:** `src/load_dw.py`
+
+The DW load process executes PREPARED validation as a preflight check and verifies the dimensional load using rules LD-01 through LD-06.
+
+In the October 16, 2026 execution:
+
+- All six load rules passed.
+- No exceptions were reported.
+- No duplicate track-genre fact keys were detected.
+- No orphan rows were detected in either bridge table.
+- The global load status was successful.
+
+These controls demonstrate structural and referential consistency. They do not, by themselves, prove that every source-level artist association is semantically correct.
+
+## 7. Transformation and Integration
+
+### 7.1 Spotify Transformation
+
+The Spotify transformation applies normalization and data quality decisions before producing the prepared track dataset.
+
+The main operations include:
+
+1. Handling duplicate `track_id + track_genre` combinations.
+2. Normalizing audio feature scales.
+3. Converting zero tempo values to NULL.
+4. Standardizing text values used for integration.
+5. Preparing artist associations.
+6. Preserving the selected track-genre grain.
+
+The resulting prepared Spotify dataset contains 113,550 rows.
+
+### 7.2 Grammy Transformation
+
+The Grammy transformation standardizes category and nominee-related values and preserves records with missing nominees.
+
+The resulting prepared nomination dataset contains 4,810 rows.
+
+Six missing nominee values remain explicitly flagged, preserving the source information without inventing nominee names.
+
+### 7.3 Artist Integration Strategy
+
+The integration is performed at the artist level.
+
+The process prepares individual Spotify artist associations and Grammy artist candidates, normalizes their names, and matches records using exact normalized-name equality.
+
+Reported integration metrics:
+
+| Metric | Result |
+|---|---:|
+| Spotify prepared rows | 113,550 |
+| Grammy prepared rows | 4,810 |
+| Spotify individual artist associations | 157,530 |
+| Spotify distinct artist names | 29,811 |
+| Grammy artist candidates | 2,970 |
+| Grammy distinct artist names | 1,656 |
+| Matched distinct artist names | 524 |
+| Unmatched Spotify artist names | 29,287 |
+| Unmatched Grammy artist names | 1,132 |
+| Confirmed track-Grammy matches | 31,925 |
+
+The unmatched names are not automatically data quality failures. Differences in source coverage, spelling, naming conventions, and artist representation may prevent exact matches.
+
+The approach deliberately avoids fuzzy matching. This reduces the risk of false positive associations but may also reduce match coverage.
+
+**Business interpretation limitation:** A Spotify track associated with a Grammy record through an artist match is not necessarily the specific track nominated for or awarded a Grammy. The relationship supports artist-level analytical association, not proof of a direct track nomination or win.
+
+## 8. Data Warehouse Architecture
+
+The project separates the data lifecycle into logical layers.
+
+- **RAW:** Stores extracted source data for reconciliation and initial quality validation.
+- **PREPARED:** Stores normalized and integrated datasets ready for dimensional loading.
+- **DW:** Stores the dimensional model used for analytical queries and dashboard consumption.
+
+PostgreSQL is used as the database engine. Docker Compose provides the containerized execution environment, and Apache Airflow orchestrates the pipeline.
+
+The database includes the schemas `raw`, `prepared`, `dw`, and `public`.
+
+## 9. Dimensional Model and Granularity
+
+The dimensional model supports the analytical requirements while preserving the selected track-genre grain.
+
+### 9.1 Fact Table
+
+**`dw.fact_track`**
+
+**Grain:** One Spotify track associated with one genre, identified by `track_id + track_genre`.
+
+The table contains the track-level attributes and measures used in analysis, including popularity, duration, and musical features.
+
+The selected grain allows a track to appear in multiple genres without incorrectly treating `track_id` as the unique row identifier.
+
+### 9.2 Dimension Tables
+
+- **`dw.dim_artist`:** Stores artist identities and normalized names.
+- **`dw.dim_genre`:** Stores the distinct genre values.
+- **`dw.dim_grammy_record`:** Stores Grammy-related records used for analytical association.
+
+### 9.3 Bridge Tables
+
+- **`dw.bridge_track_artist`:** Represents track-to-artist associations.
+- **`dw.bridge_track_grammy`:** Represents associations between Spotify tracks and Grammy records established through the integration process.
+
+The bridge tables support many-to-many relationships without duplicating the core fact records for each artist or Grammy association.
+
+### 9.4 Reported Dimensional Row Counts
+
+| Table | Rows |
+|---|---:|
+| `dw.fact_track` | 113,550 |
+| `dw.dim_artist` | 30,943 |
+| `dw.dim_genre` | 114 |
+| `dw.dim_grammy_record` | 4,430 |
+| `dw.bridge_track_artist` | 157,530 |
+| `dw.bridge_track_grammy` | 31,917 |
+
+The counts represent the reported successful load on October 16, 2026.
+
+**Reconciliation note:** The PREPARED integration output reports 31,925 track-Grammy matches, whereas the dimensional bridge contains 31,917 rows. This eight-row difference remains a reconciliation item. The absence of duplicate or orphan bridge rows does not establish that the two counts should be identical or explain the difference.
+
+## 10. Apache Airflow Orchestration
+
+The pipeline is orchestrated by the `etl_workshop_pipeline` DAG.
+
+### 10.1 DAG Tasks
+
+1. `extract_spotify`
+2. `extract_grammy`
+3. `validate_raw_spotify`
+4. `validate_raw_grammy`
+5. `transform_and_integrate`
+6. `validate_prepared`
+7. `load_data_warehouse`
+
+### 10.2 Dependency Design
+
+The two extraction tasks execute independently.
+
+Each extraction is followed by its corresponding RAW validation. Both RAW validations must succeed before the transformation and integration stage can proceed.
+
+The PREPARED validation then verifies the transformed datasets, and the DW load performs its own preflight checks before inserting or updating dimensional records.
+
+This design makes the quality gates part of the execution flow rather than treating validation as an optional post-processing activity.
+
+### 10.3 Execution Environment
+
+The project uses Docker Compose to manage the database and Airflow services.
+
+Key components include:
+
+- PostgreSQL for source layers, prepared datasets, and the data warehouse.
+- Airflow API server for the web interface.
+- Airflow scheduler and DAG processor for workflow management.
+- Airflow worker for task execution.
+- Redis and the Airflow metadata database for orchestration support.
+
+Airflow UI: `http://localhost:8080`
+
+The project database is `etl_workshop`.
+
+Within the Docker network, the PostgreSQL service is addressed as `postgres` on port `5432`. Host-side database access uses port `5433`.
+
+## 11. Failure Handling, Testing, and Repeatability
+
+The project distinguishes data quality failures from technical execution errors.
+
+### 11.1 Critical Validation Failures
+
+Critical RAW rules act as execution gates. If a critical rule fails, the validation script raises an error and prevents downstream processing from proceeding normally.
+
+This prevents invalid or incomplete source data from being treated as a successful pipeline input.
+
+### 11.2 Technical Errors
+
+A previous PREPARED validation test returned:
+
+- `execution_status = ERROR`
+- `global_success = false`
+- `OperationalError`
+- Connection refused on `localhost:59999`
+
+This was a technical connectivity failure. No quality rules were evaluated because the database connection could not be established.
+
+The error illustrates why operational failures must be distinguished from logical data quality failures.
+
+### 11.3 Repeatability and Safe Reruns
+
+The load implementation uses a transaction for the RAW truncate-and-load operation and passes the same database connection to the insertion process.
+
+The dimensional loading process uses the defined keys and conflict-handling logic to manage existing records during repeated executions.
+
+Repeatability should be verified by running the pipeline again and comparing row counts and key-level checks, rather than assuming that a successful run alone proves idempotency.
+
+### 11.4 Successful Execution Evidence
+
+The October 16, 2026 execution reported:
+
+- Successful artist integration.
+- Successful PREPARED validation.
+- All seven PREPARED validation rules passing.
+- All six DW load rules passing.
+- No reported load exceptions.
+- No duplicate fact track-genre keys.
+- No orphan track-artist or track-Grammy bridge rows.
+- `global_success = true`.
+
+Evidence files available in the project include:
+
+- `docs/evidence/artist_integration_latest.json`
+- `docs/evidence/load_dw_latest.json`
+- `docs/evidence/prepared_validation_latest.json`
+- `docs/evidence/transform_integrate_latest.json`
+- `docs/evidence/analytics_results.txt`
+
+RAW validation evidence includes:
+
+- `docs/evidence/raw_validation_20261014_120856_556312.json`
+- `docs/evidence/raw_validation_20261014_120903_105677.json`
+
+The repository should also include the actual evidence for the controlled critical-failure test, repeatability test, and dashboard execution where available.
+
+## 12. Analytical Queries and Dashboard
+
+The analytical SQL is maintained in:
+
+**`sql/analytics_queries.sql`**
+
+The queries support the three business requirements.
+
+### RQ-01 — Average Popularity by Genre
+
+The query calculates average Spotify popularity by genre for tracks associated with Grammy records.
+
+### RQ-02 — Musical Characteristics by Genre
+
+The query compares selected Spotify audio features by genre to support analysis of musical characteristics.
+
+### RQ-03 — Popularity by Grammy Year and Category
+
+The query groups current Spotify popularity by Grammy year and category using the available track-Grammy associations.
+
+The dashboard consumes the dimensional data warehouse and presents the results in a form suitable for exploring these requirements.
+
+### Interpretation and Coverage Limitations
+
+The analytical results depend on the artist-level integration and the records represented in `dw.bridge_track_grammy`.
+
+Therefore:
+
+- The results do not necessarily represent every track in the Spotify dataset.
+- The association does not prove that each linked track was directly nominated for or won a Grammy.
+- The available `winner` field does not distinguish winning from non-winning records because only `True` was observed.
+- The current Spotify popularity value cannot be used to reconstruct historical popularity trends without time-stamped historical observations.
+- Exact normalized-name matching can leave legitimate artist matches unresolved.
+
+These limitations should be considered when interpreting the dashboard results.
+
+## 13. Repository Structure
+
+The project follows a separation of concerns between orchestration, source data, transformation scripts, validation logic, SQL, and evidence.
 
 ```text
 Workshop2/
 ├── dags/
 │   └── etl_workshop_pipeline.py
 ├── data/
-│   ├── analytics/
 │   ├── spotify_dataset.csv
 │   └── the_grammy_awards.csv
+├── src/
+│   ├── extract_spotify.py
+│   ├── extract_grammy.py
+│   ├── transform_integrate.py
+│   ├── integrate_artists.py
+│   ├── prepared_validation.py
+│   └── load_dw.py
+├── gx/
+│   └── raw_validation.py
+├── sql/
+│   ├── dw_schema.sql
+│   └── analytics_queries.sql
 ├── docs/
 │   └── evidence/
-├── gx/
-│   ├── raw_validation.py
-│   └── results/
-├── notebooks/
-│   ├── profiling_grammy.ipynb
-│   ├── profiling_spotify.ipynb
-│   └── prueba.ipynb
-├── sql/
-│   ├── analytics_queries.sql
-│   └── source_setup.sql
-├── src/
-│   ├── extract_grammy.py
-│   ├── extract_spotify.py
-│   ├── integrate_artists.py
-│   ├── load_dw.py
-│   ├── prepared_validation.py
-│   └── transform_integrate.py
-├── config/
-├── logs/
-├── notebooks/
-├── backups/
-├── Dockerfile
 ├── docker-compose.yml
+├── Dockerfile
 ├── requirements.txt
 └── README.md
 ```
 
-Generated logs, temporary results, local environment files, and database backups should be excluded from version control unless selected as intentional evidence. The `.env` file must not be committed.
+This is a representative structure. File placement should reflect the actual repository, and additional SQL, configuration, dashboard, or test files should be documented if present.
 
-## 5. Pipeline Architecture
+## 14. Setup and Execution
 
-The pipeline separates orchestration from reusable ETL logic. Airflow coordinates the workflow, while Python modules implement extraction, transformation, integration, validation, and loading.
-
-```text
-Spotify CSV ───────┐
-                   ├─> Extraction ─> Raw validation
-Grammy CSV ────────┘                     │
-                                        v
-                              Transformation and integration
-                                        │
-                                        v
-                               Prepared-data validation
-                                        │
-                                        v
-                           PostgreSQL dimensional warehouse
-                                        │
-                                        v
-                              Analytical SQL queries
-                                        │
-                                        v
-                                 Power BI report
-```
-
-The Airflow DAG is named `etl_workshop_pipeline`. The PostgreSQL service for project data is exposed on host port `5433`; the Airflow interface is exposed on port `8080`.
-
-## 6. Data Profiling and Quality Findings
-
-Initial profiling was performed in `notebooks/profiling_spotify.ipynb` and `notebooks/profiling_grammy.ipynb`.
-
-The analysis focused on schema consistency, missing values, data types, duplicate records, identifier quality, categorical variation, and suitability for integration.
-
-### Key findings and risks
-
-- Spotify data includes track metadata, genre labels, popularity, and numerical audio features.
-- Track and artist names may vary in formatting, spelling, or representation across sources.
-- A track can be associated with multiple artists, so artist relationships require a separate bridge table.
-- Grammy records are not equivalent to Spotify tracks and cannot be reliably joined using a simple one-to-one relationship.
-- Duplicate business identifiers and repeated records must be distinguished from complete-row duplicates.
-- Missing or inconsistent values may affect analytical coverage and aggregation results.
-
-The prepared Spotify dataset contains **113,550 track-genre records** in the recorded baseline. The prepared Grammy dataset contains **4,810 records**. These counts describe the recorded pipeline baseline and should be rechecked after source changes.
-
-## 7. Quality Rules and Great Expectations
-
-Raw-data validation is implemented in `gx/raw_validation.py`, while prepared-data validation is implemented in `src/prepared_validation.py`.
-
-The validation design checks whether data satisfies the conditions required for safe transformation and loading. Relevant rule groups include:
-
-- **Schema validation:** expected columns and data structure are present.
-- **Type and domain validation:** numerical measures and categorical fields conform to expected formats and domains.
-- **Completeness validation:** required identifiers and attributes meet completeness requirements.
-- **Uniqueness and duplicate analysis:** duplicate behavior is assessed using appropriate keys rather than assuming every repeated value is invalid.
-- **Referential integrity:** integrated records can be linked to their corresponding dimensional entities.
-- **Prepared-data validation:** transformed datasets meet the requirements of the warehouse loading stage.
-
-Great Expectations is pinned to version `1.24.0` in the project requirements. Validation results are stored under `gx/results/`, with selected evidence in `docs/evidence/`.
-
-A validation failure should prevent invalid data from silently proceeding through mandatory pipeline gates. The exact rule identifiers, thresholds, and failure actions should be maintained alongside the validation implementation.
-
-## 8. Transformation and Data Integration
-
-The transformation and integration logic is separated into reusable modules:
-
-- `src/extract_spotify.py` extracts the Spotify source data.
-- `src/extract_grammy.py` extracts the Grammy source data.
-- `src/transform_integrate.py` prepares and integrates source records.
-- `src/integrate_artists.py` handles artist integration and candidate matching.
-- `src/prepared_validation.py` validates prepared datasets.
-- `src/load_dw.py` loads the dimensional warehouse.
-
-Artist names and other matching attributes may require normalization before matching. Matching results should be interpreted according to the matching method and available evidence, rather than assuming every candidate represents a confirmed identity.
-
-The integration process preserves many-to-many relationships where necessary. Grammy associations should be interpreted as dataset-derived relationships, not as definitive proof of a Grammy win by a track or artist.
-
-## 9. Dimensional Data Warehouse
-
-The analytical warehouse is implemented in PostgreSQL under the `dw` schema.
-
-### Main tables
-
-| Table | Purpose |
-|---|---|
-| `dw.fact_track` | Track-genre-level analytical measures |
-| `dw.dim_artist` | Artist descriptive attributes |
-| `dw.dim_genre` | Genre dimension |
-| `dw.dim_grammy_record` | Grammy year and category attributes |
-| `dw.bridge_track_artist` | Many-to-many relationship between tracks and artists |
-| `dw.bridge_track_grammy` | Many-to-many relationship between tracks and Grammy records |
-
-### Fact table grain
-
-The grain of `dw.fact_track` is **one row per Spotify track and genre**, identified by the combination of track identity and genre. A track appearing under multiple genres can therefore contribute multiple rows to the fact table. Aggregations must account for this grain to avoid unintentionally counting the same track more than once.
-
-The fact table stores popularity and audio measures, including duration, danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, and tempo.
-
-The bridge tables support relationships that cannot be represented accurately by a single foreign key in the fact table. The Grammy bridge also stores match metadata such as `match_method` and `match_role`.
-
-## 10. Airflow Orchestration and Reliability
-
-The DAG `etl_workshop_pipeline` coordinates the ETL stages and their dependencies. Processing logic remains in `src/` and validation logic in `gx/` and `src/prepared_validation.py`, rather than placing all transformation code inside the DAG.
-
-The project runs Airflow using Docker Compose with a Celery-based execution architecture, Redis as the message broker, and a separate PostgreSQL service for Airflow metadata. The project warehouse uses a different PostgreSQL service.
-
-### Failure handling and retries
-
-The DAG should define retries for transient failures and avoid retrying deterministic data-quality failures indefinitely. Mandatory validation failures should be visible in Airflow task status and execution logs.
-
-The controlled-failure test is represented by the task `inject_spotify_reconciliation_failure` in the execution evidence. Its purpose is to demonstrate that an intentional failure can be observed through the orchestration layer. The final evidence register should identify the exact run, expected failure, and observed downstream behavior.
-
-### Repeatability and safe reruns
-
-A rerun should not create unintended duplicate warehouse records or inconsistent bridge relationships. Repeatability depends on stable business keys, deterministic transformations, and the conflict-handling behavior implemented in `src/load_dw.py`.
-
-A successful initial run alone does not prove safe rerun behavior. The evidence should include a rerun of the same input and a comparison of relevant warehouse row counts and key constraints before and after the rerun.
-
-## 11. Execution Evidence
-
-Selected evidence is maintained in `docs/evidence/`, with validation results also available under `gx/results/` and `logs/`.
-
-Examples of existing evidence files include:
-
-- `docs/evidence/DAG en Airflow.png` — DAG visualization.
-- `docs/evidence/Grid de Airflow.png` — Airflow task grid.
-- `docs/evidence/dw_row_counts.txt` — warehouse row counts.
-- `docs/evidence/prepared_validation_latest.json` — prepared-data validation result.
-- `docs/evidence/transform_integrate_latest.json` — transformation and integration evidence.
-- `docs/evidence/artist_integration_latest.json` — artist integration evidence.
-- `docs/evidence/load_dw_latest.json` — warehouse loading evidence.
-- `docs/evidence/analytics_results.txt` — analytical query evidence.
-
-For assessment, evidence should clearly distinguish a successful pipeline run, a controlled failed run, and a safe rerun. Each item should identify the relevant execution or test and the expected versus observed result.
-
-## 12. Analytical Outputs and Power BI
-
-The Power BI report presents the analytical requirements through three views:
-
-- **RQ-01:** average popularity by genre.
-- **RQ-02:** comparison of audio features by genre.
-- **RQ-03:** average popularity by Grammy year and category.
-
-The analytical SQL queries are maintained in `sql/analytics_queries.sql`. The RQ-03 analysis uses the track-to-Grammy bridge to associate tracks with Grammy records and applies the selected track set to the fact table. Results should be interpreted as popularity among associated tracks, not necessarily winners or nominees exclusively unless the source data and matching logic establish that distinction.
-
-Add the actual Power BI `.pbix` filename or a relative link here once confirmed. The report should be checked to ensure that it uses the dimensional warehouse rather than an unrelated local extract.
-
-## 13. Setup and Execution
-
-### Prerequisites
+### 14.1 Prerequisites
 
 - Docker Desktop with Docker Compose.
 - Git.
-- The source CSV files included in `data/`.
+- Access to the two source CSV files.
+- Sufficient local resources to run PostgreSQL and the Airflow services.
 
-### 1. Clone the repository
+### 14.2 Start the Environment
 
-```bash
-git clone https://github.com/Santiago-Clon/workshop2.git
-cd workshop2
+From the project root:
+
+```powershell
+docker compose up -d --build
 ```
 
-### 2. Configure environment variables
+Initialize Airflow if required by the environment:
 
-Create a local `.env` file based on a documented example. Do not commit `.env` or real credentials. Configure the Airflow UID and any other variables required by the Compose file.
-
-### 3. Build the Airflow image
-
-```bash
-docker compose build
-```
-
-The Dockerfile installs the dependencies from `requirements.txt` using the Airflow version-specific constraints file.
-
-### 4. Initialize Airflow
-
-```bash
+```powershell
 docker compose up airflow-init
 ```
 
-Wait for initialization to complete successfully.
+Then start or verify the services:
 
-### 5. Start the services
-
-```bash
-docker compose up -d
+```powershell
+docker compose ps
 ```
 
-Open the Airflow interface at `http://localhost:8080`. Use the credentials configured for the local environment. Confirm that the DAG `etl_workshop_pipeline` is available before triggering a run.
+The exact startup sequence depends on the current Docker Compose configuration and whether initialization has already been completed.
 
-The project PostgreSQL service is exposed at `localhost:5433`. Use the credentials configured for the project database when connecting with a SQL client or Power BI.
+### 14.3 Access Airflow
 
-### 6. Run and verify the pipeline
+Open:
 
-Trigger the DAG and inspect task status and logs in Airflow. Confirm that raw and prepared validation results are generated, warehouse loading completes, and expected warehouse tables contain records. Run the analytical queries in `sql/analytics_queries.sql` and compare their results with the Power BI report.
+```text
+http://localhost:8080
+```
 
-Do not remove Docker volumes when restarting the project unless intentionally resetting the database. A command such as `docker compose down -v` can delete persistent data.
+Locate the `etl_workshop_pipeline` DAG, enable it if necessary, and trigger a run.
 
-## 14. Assumptions and Limitations
+Monitor the task statuses and inspect task logs to verify that extraction, validation, transformation, integration, and DW loading complete successfully.
 
-- Results depend on the versions and contents of the source CSV files.
-- Name-based integration can produce ambiguous or incomplete matches.
-- A Grammy record association does not, by itself, establish that a track or artist won an award.
-- The fact table grain is track plus genre, which affects aggregation and duplicate interpretation.
-- Popularity is a source-provided measure and may not represent a permanent or directly comparable measure across time.
-- Local Docker configuration and credentials must be configured independently by each user.
-- Successful execution, controlled failure handling, and safe rerun behavior must be demonstrated with execution evidence rather than inferred from the existence of the DAG.
+### 14.4 Verify the Data Warehouse
 
-## 15. Deliverable Checklist
+Connect to the PostgreSQL database `etl_workshop` using the connection details configured for the environment.
 
-- [x] Profiling notebooks and ETL source modules organized by responsibility.
-- [x] Great Expectations raw-data validation implementation.
-- [x] Prepared-data validation implementation.
-- [x] Airflow DAG and Docker Compose environment.
-- [x] PostgreSQL dimensional warehouse and analytical SQL queries.
-- [x] Power BI report included in the repository.
-- [ ] Quality-rule catalog with rule IDs, thresholds, failure actions, and links to analytical requirements.
-- [ ] Architecture and dimensional-model diagrams included as documentation.
-- [ ] Successful execution evidence linked to a specific run.
-- [ ] Controlled failure evidence with expected and observed behavior.
-- [ ] Safe rerun evidence demonstrating that repeated execution does not introduce unintended duplicates.
-- [ ] Reproducible setup verified from a clean clone and fresh environment.
+For host-side access, the default configuration uses port `5433`. Inside the Docker network, use the PostgreSQL service name and port `5432`.
 
-The checklist must be updated to reflect only capabilities that have been verified in the final repository and execution environment.
+Inspect the row counts in the `dw` schema and compare them with the latest successful evidence.
+
+### 14.5 Execute Analytical Queries
+
+Run the SQL statements in:
+
+```text
+sql/analytics_queries.sql
+```
+
+Use the results to verify the analytical outputs consumed by the dashboard.
+
+**Configuration note:** Connection credentials and environment-specific values should be supplied through the project's environment configuration rather than hard-coded into new scripts.
+
+## 15. Main Challenges and Implemented Solutions
+
+| Challenge | Implemented solution |
+|---|---|
+| Duplicate track-genre observations | Profiled repeated keys and removed 450 additional rows |
+| Inconsistent audio feature scales | Normalized numeric attributes |
+| Tempo values equal to zero | Converted 157 values to NULL |
+| Missing Grammy nominee names | Preserved and flagged six records |
+| Different artist naming conventions | Applied normalized-name matching |
+| Risk of false-positive integration | Disabled fuzzy matching |
+| Quality failures affecting downstream processing | Introduced critical RAW and PREPARED validation gates |
+| Technical database connection failures | Recorded execution errors separately from quality rule results |
+| Complex pipeline dependencies | Orchestrated extraction, validation, transformation, and loading with Airflow |
+| Many-to-many artist and Grammy relationships | Represented associations through dimensional bridge tables |
+
+## 16. Assumptions and Limitations
+
+1. The selected Spotify analytical grain is one track-genre observation, identified by `track_id + track_genre`.
+2. The Spotify source does not provide the historical popularity snapshots required to analyze changes in popularity over time.
+3. Artist integration uses exact equality after normalization and does not use fuzzy matching.
+4. Grammy associations are made at the artist level and do not establish direct track nomination or award status.
+5. The constant `winner` source value prevents distinguishing winners from non-winners using that field.
+6. Unmatched artist names are retained as unmatched rather than being assigned speculative identities.
+7. The eight-row difference between prepared track-Grammy matches and the dimensional bridge requires reconciliation before claiming full match preservation.
+8. The reported row counts describe the documented successful execution and may change if the source data or transformation logic changes.
+
+## 17. Conclusion
+
+This project establishes a reproducible ETL workflow that transforms Spotify and Grammy source datasets into a dimensional data warehouse for analytical consumption.
+
+The implementation combines source profiling, data quality controls, normalization, artist-level integration, dimensional modeling, Airflow orchestration, and SQL-based analytics.
+
+The resulting warehouse supports the three defined business requirements through genre-level musical analysis and Grammy-related artist associations.
+
+The main technical outcome is a structured and validated data pipeline. The main analytical caveat is that the integration represents artist-level associations rather than verified direct relationships between individual Spotify tracks and Grammy nominations or wins.
+
+The quality of the analytical conclusions therefore depends on understanding the selected grain, integration strategy, source limitations, and reconciliation checks documented in this README.
+
 
 ## 16. Conclusion
 

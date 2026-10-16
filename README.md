@@ -308,7 +308,7 @@ The dimensional model supports the analytical requirements while preserving the 
 
 The following diagram illustrates the dimensional model, including the fact table, dimensions, bridge tables, key attributes, and relationships.
 
-![Spotify and Grammy Awards Dimensional Model](docs/images/dimensional_model.png)
+![Spotify and Grammy Awards Dimensional Model](docs/images/Modelo_dimensional.png)
 
 
 ### 9.1 Fact Table

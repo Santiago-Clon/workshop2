@@ -304,6 +304,13 @@ The database includes the schemas `raw`, `prepared`, `dw`, and `public`.
 
 The dimensional model supports the analytical requirements while preserving the selected track-genre grain.
 
+### Dimensional Model Diagram
+
+The following diagram illustrates the dimensional model, including the fact table, dimensions, bridge tables, key attributes, and relationships.
+
+![Spotify and Grammy Awards Dimensional Model](docs/images/dimensional_model.png)
+
+
 ### 9.1 Fact Table
 
 **`dw.fact_track`**
